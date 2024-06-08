@@ -1,4 +1,4 @@
-﻿///// main.cpp
+///// main.cpp
 ///// OpenGL 3+, GLSL 1.20, GLEW, GLFW3
 
 #include <GL/glew.h>
@@ -499,49 +499,60 @@ GLuint create_shader_from_file(const std::string& filename, GLuint shader_type)
 // vertex shader와 fragment shader를 링크시켜 program을 생성하는 함수
 void init_shader_program()
 {
-  GLuint vertex_shader
-    = create_shader_from_file("./shader/vertex.glsl", GL_VERTEX_SHADER);
+      GLuint vertex_shader = create_shader_from_file("./shader/vertex.glsl", GL_VERTEX_SHADER);
+    std::cout << "vertex_shader id: " << vertex_shader << std::endl;
+    assert(vertex_shader != 0);
 
-  std::cout << "vertex_shader id: " << vertex_shader << std::endl;
-  assert(vertex_shader != 0);
+    GLuint fragment_shader = create_shader_from_file("./shader/fragment.glsl", GL_FRAGMENT_SHADER);
+    std::cout << "fragment_shader id: " << fragment_shader << std::endl;
+    assert(fragment_shader != 0);
 
-  GLuint fragment_shader
-    = create_shader_from_file("./shader/fragment.glsl", GL_FRAGMENT_SHADER);
+    program = glCreateProgram();
+    glAttachShader(program, vertex_shader);
+    glAttachShader(program, fragment_shader);
+    glLinkProgram(program);
 
-  std::cout << "fragment_shader id: " << fragment_shader << std::endl;
-  assert(fragment_shader != 0);
+    GLint is_linked;
+    glGetProgramiv(program, GL_LINK_STATUS, &is_linked);
+    if (is_linked != GL_TRUE)
+    {
+        std::cout << "Shader LINK error: " << std::endl;
 
-  program = glCreateProgram();
-  glAttachShader(program, vertex_shader);
-  glAttachShader(program, fragment_shader);
-  glLinkProgram(program);
+        GLint buf_len;
+        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &buf_len);
 
-  GLint is_linked;
-  glGetProgramiv(program, GL_LINK_STATUS, &is_linked);
-  if (is_linked != GL_TRUE)
-  {
-    std::cout << "Shader LINK error: " << std::endl;
+        std::string log_string(1 + buf_len, '\0');
+        glGetProgramInfoLog(program, buf_len, 0, (GLchar *)log_string.c_str());
 
-    GLint buf_len;
-    glGetProgramiv(program, GL_INFO_LOG_LENGTH, &buf_len);
+        std::cout << "error_log: " << log_string << std::endl;
 
-    std::string log_string(1 + buf_len, '\0');
-    glGetProgramInfoLog(program, buf_len, 0, (GLchar *)log_string.c_str());
+        glDeleteProgram(program);
+        program = 0;
+    }
 
-    std::cout << "error_log: " << log_string << std::endl;
+    std::cout << "program id: " << program << std::endl;
+    assert(program != 0);
 
-    glDeleteProgram(program);
-    program = 0;
-  }
+    loc_u_PVM = glGetUniformLocation(program, "u_PVM");
 
-  std::cout << "program id: " << program << std::endl;
-  assert(program != 0);
+    loc_a_position = glGetAttribLocation(program, "a_position");
+    loc_a_normal = glGetAttribLocation(program, "a_normal");
 
-  loc_u_PVM = glGetUniformLocation(program, "u_PVM");
+    loc_u_view_matrix = glGetUniformLocation(program, "u_view_matrix");
+    loc_u_model_matrix = glGetUniformLocation(program, "u_model_matrix");
+    loc_u_normal_matrix = glGetUniformLocation(program, "u_normal_matrix");
 
-  loc_a_position = glGetAttribLocation(program, "a_position");
-  loc_a_color = glGetAttribLocation(program, "a_color");
+    loc_u_camera_position = glGetUniformLocation(program, "u_camera_position");
+    loc_u_light_position = glGetUniformLocation(program, "u_light_position");
 
+    loc_u_light_ambient = glGetUniformLocation(program, "u_light_ambient");
+    loc_u_light_diffuse = glGetUniformLocation(program, "u_light_diffuse");
+    loc_u_light_specular = glGetUniformLocation(program, "u_light_specular");
+
+    loc_u_obj_ambient = glGetUniformLocation(program, "u_obj_ambient");
+    loc_u_obj_diffuse = glGetUniformLocation(program, "u_obj_diffuse");
+    loc_u_obj_specular = glGetUniformLocation(program, "u_obj_specular");
+    loc_u_obj_shininess = glGetUniformLocation(program, "u_obj_shininess");
   // TODO: get locations of the GPU uniform/attribute variables 
   //       for implementing Phong reflection model
 
@@ -561,13 +572,27 @@ void render_object()
 
   // TODO : send uniform for camera & light to GPU
 
+  glUniformMatrix4fv(loc_u_view_matrix, 1, GL_FALSE, glm::value_ptr(mat_view));
+    glUniform3fv(loc_u_camera_position, 1, glm::value_ptr(camera.get_pose()));
+
+    glUniform3fv(loc_u_light_position, 1, glm::value_ptr(g_light.pos));
+    glUniform3fv(loc_u_light_ambient, 1, glm::value_ptr(g_light.ambient));
+    glUniform3fv(loc_u_light_diffuse, 1, glm::value_ptr(g_light.diffuse));
+    glUniform3fv(loc_u_light_specular, 1, glm::value_ptr(g_light.specular));
   for (std::size_t i = 0; i < g_models.size(); ++i)
   {
     Model& model = g_models[i];
 
     // TODO : set mat_model, mat_normal, mat_PVM 
     // TODO : send uniform data for model to GPU
-    
+            glm::mat4 mat_model = model.get_model_matrix();
+        glm::mat3 mat_normal = glm::transpose(glm::inverse(glm::mat3(mat_model)));
+        glm::mat4 mat_PVM = mat_proj * mat_view * mat_model;
+
+        glUniformMatrix4fv(loc_u_model_matrix, 1, GL_FALSE, glm::value_ptr(mat_model));
+        glUniformMatrix3fv(loc_u_normal_matrix, 1, GL_FALSE, glm::value_ptr(mat_normal));
+        glUniformMatrix4fv(loc_u_PVM, 1, GL_FALSE, glm::value_ptr(mat_PVM));
+        
     model.draw(loc_a_position, loc_a_normal, loc_u_obj_ambient, loc_u_obj_diffuse, loc_u_obj_specular, loc_u_obj_shininess);
   }
 
@@ -631,3 +656,4 @@ int main(int argc, char* argv[])
 
   return 0;
 }
+

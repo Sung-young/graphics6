@@ -27,12 +27,12 @@ void Model::draw(int loc_a_position, int loc_a_normal, int loc_u_ambient, int lo
         // call glUniform1f(...) 
         //      with loc_u_shininess
         //      to send mesh.material.shininess
+        // Material 데이터를 GPU로 전송
         glUniform3fv(loc_u_ambient, 1, glm::value_ptr(mesh.material.ambient));
         glUniform3fv(loc_u_diffuse, 1, glm::value_ptr(mesh.material.diffuse));
         glUniform3fv(loc_u_specular, 1, glm::value_ptr(mesh.material.specular));
-        
         glUniform1f(loc_u_shininess, mesh.material.shininess);
-        
+
         mesh.draw(loc_a_position, loc_a_normal);
     }
 }
@@ -77,3 +77,4 @@ bool Model::load_model(const std::string& _path)
     }
     return true;
 }
+

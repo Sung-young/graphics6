@@ -27,19 +27,21 @@ void Mesh::update_tv_indices()
     }
 }
 
+
 void Mesh::set_gl_position_buffer_()
 {
     assert(pmesh_->HasPositions());
 
     std::vector<glm::vec3>  tv_positions;       // per triangle-vertex 3D position (size = 3 x #triangles)
-   
+    
     // TODO: for each triangle, set tv_positions
+    tv_positions.reserve(tv_indices_.size());
+
     for (unsigned int i = 0; i < tv_indices_.size(); ++i)
     {
-        unsigned int vIndex = tv_indices_[i];
-        tv_positions.push_back(glm::vec3(pmesh_->mVertices[vIndex].x, pmesh_->mVertices[vIndex].y, pmesh_->mVertices[vIndex].z));
+        aiVector3D& ai_pos = pmesh_->mVertices[tv_indices_[i]];
+        tv_positions.push_back(glm::vec3(ai_pos.x, ai_pos.y, ai_pos.z));
     }
-
     glBindBuffer(GL_ARRAY_BUFFER, position_buffer_);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*tv_positions.size(), &tv_positions[0], GL_STATIC_DRAW);
 }
@@ -47,17 +49,16 @@ void Mesh::set_gl_position_buffer_()
 void Mesh::set_gl_color_buffer_(unsigned int cs_idx)
 {
     assert(pmesh_->HasVertexColors(cs_idx));
-
-    std::vector<glm::vec3>  tv_colors;       // per triangle-vertex 3D position (size = 3 x #triangles)
+    
+    std::vector<glm::vec3> tv_colors; // per triangle-vertex 3D color (size = 3 x #triangles)
+    tv_colors.reserve(tv_indices_.size());
 
     // TODO: for each triangle, set tv_colors
-
     for (unsigned int i = 0; i < tv_indices_.size(); ++i)
     {
-        unsigned int vIndex = tv_indices_[i];
-        tv_colors.push_back(glm::vec3(pmesh_->mColors[cs_idx][vIndex].r, pmesh_->mColors[cs_idx][vIndex].g, pmesh_->mColors[cs_idx][vIndex].b));
+        aiColor4D& ai_color = pmesh_->mColors[cs_idx][tv_indices_[i]];
+        tv_colors.push_back(glm::vec3(ai_color.r, ai_color.g, ai_color.b));
     }
-    
     glBindBuffer(GL_ARRAY_BUFFER, color_buffer_);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*tv_colors.size(), &tv_colors[0], GL_STATIC_DRAW);
 
@@ -75,34 +76,26 @@ void Mesh::set_gl_normal_buffer_(ShadingType shading_type)
     v_smooth_normals.resize(pmesh_->mNumVertices);
     for (std::size_t i = 0; i < v_smooth_normals.size(); ++i)
         v_smooth_normals[i] = glm::vec3(0.0f, 0.0f, 0.0f);
-    
+
     // TODO: compute per-triangle normal & 
     //       add_up to tv_flat_normals & v_smooth_normals
     tv_flat_normals.resize(tv_indices_.size());
-    for (std::size_t i = 0; i < pmesh_->mNumFaces; ++i)
+    for (std::size_t i = 0; i < tv_indices_.size(); i += 3)
     {
-        aiFace& ai_face = pmesh_->mFaces[i];
-        assert(ai_face.mNumIndices >= 3);
-        
-        aiVector3D p0 = pmesh_->mVertices[ai_face.mIndices[0]];
-        aiVector3D p1 = pmesh_->mVertices[ai_face.mIndices[1]];
-        aiVector3D p2 = pmesh_->mVertices[ai_face.mIndices[2]];
-        
-        glm::vec3 pv0 = glm::vec3 (p0.x, p0.y, p0.z);
-        glm::vec3 pv1 = glm::vec3 (p1.x, p1.y, p1.z);
-        glm::vec3 pv2 = glm::vec3 (p2.x, p2.y, p2.z);
-        
-        glm::vec3 t_normal = glm::normalize(glm::cross(pv0 - pv1, pv2 - pv1));
-        
-        tv_flat_normals[i * 3 + 0] = t_normal;
-        tv_flat_normals[i * 3 + 1] = t_normal;
-        tv_flat_normals[i * 3 + 2] = t_normal;
-        
-        v_smooth_normals[ai_face.mIndices[0]] += t_normal;
-        v_smooth_normals[ai_face.mIndices[1]] += t_normal;
-        v_smooth_normals[ai_face.mIndices[2]] += t_normal;
+        glm::vec3 p0 = glm::vec3(pmesh_->mVertices[tv_indices_[i]].x, pmesh_->mVertices[tv_indices_[i]].y, pmesh_->mVertices[tv_indices_[i]].z);
+        glm::vec3 p1 = glm::vec3(pmesh_->mVertices[tv_indices_[i + 1]].x, pmesh_->mVertices[tv_indices_[i + 1]].y, pmesh_->mVertices[tv_indices_[i + 1]].z);
+        glm::vec3 p2 = glm::vec3(pmesh_->mVertices[tv_indices_[i + 2]].x, pmesh_->mVertices[tv_indices_[i + 2]].y, pmesh_->mVertices[tv_indices_[i + 2]].z);
+
+        glm::vec3 normal = glm::normalize(glm::cross(p1 - p0, p2 - p0));
+
+        tv_flat_normals[i] = normal;
+        tv_flat_normals[i + 1] = normal;
+        tv_flat_normals[i + 2] = normal;
+
+        v_smooth_normals[tv_indices_[i]] += normal;
+        v_smooth_normals[tv_indices_[i + 1]] += normal;
+        v_smooth_normals[tv_indices_[i + 2]] += normal;
     }
-    
     // normalize v_smooth_normals
     for (std::size_t i = 0; i < v_smooth_normals.size(); ++i)
         v_smooth_normals[i] = glm::normalize(v_smooth_normals[i]);
@@ -110,24 +103,15 @@ void Mesh::set_gl_normal_buffer_(ShadingType shading_type)
     // if pmesh_ has per-vertex normals, then just use them.
     if (pmesh_->HasNormals())
         memcpy(&v_smooth_normals[0], &pmesh_->mNormals[0], sizeof(pmesh_->mNormals[0])*pmesh_->mNumVertices);
-   
+
     // TODO: set tv_smooth_normals from v_smooth_normals
-    tv_smooth_normals.resize(pmesh_->mNumFaces * 3);
-
-    for (std::size_t i = 0; i < pmesh_->mNumFaces; ++i) 
+    for (unsigned int i = 0; i < tv_indices_.size(); ++i)
     {
-        aiFace& face = pmesh_->mFaces[i];
-        assert(face.mNumIndices == 3);  // We assume that the mesh is triangulated
-
-        tv_smooth_normals[i * 3 + 0] = glm::normalize(v_smooth_normals[face.mIndices[0]]);
-        tv_smooth_normals[i * 3 + 1] = glm::normalize(v_smooth_normals[face.mIndices[1]]);
-        tv_smooth_normals[i * 3 + 2] = glm::normalize(v_smooth_normals[face.mIndices[2]]);
+        tv_smooth_normals.push_back(v_smooth_normals[tv_indices_[i]]);
     }
-    
     glBindBuffer(GL_ARRAY_BUFFER, normal_buffer_);
-   
     if (shading_type == kSmooth)
-    {   
+    {
         glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3)*tv_smooth_normals.size(), &tv_smooth_normals[0], GL_STATIC_DRAW);
     }
     else //if (shading_type == kFlat)
@@ -148,23 +132,30 @@ void Mesh::set_gl_buffers(ShadingType shading_type)
 void Mesh::draw(int loc_a_position, int loc_a_normal)
 {
     // TODO : draw a triangular mesh
-    // 앞으로 언급하는 배열 버퍼(GL_ARRAY_BUFFER)는 position_buffer로 지정
+    //          glBindBuffer() with position_buffer_
+    //          glEnableVertexAttribArray() for loc_a_position  
+    //          glVertexAttribPointer() by reusing GPU data in loc_a_position
+    //
+    //          glBindBuffer() with normal_buffer_
+    //          glEnableVertexAttribArray() for loc_a_normal  
+    //          glVertexAttribPointer() by reusing GPU data in loc_a_normal
+    //
+    //          glDrawArrays(GL_TRIANGLES, ...)
+    //
+    //          glDisableVertexAttribArray() for loc_a_position & loc_a_normal
     glBindBuffer(GL_ARRAY_BUFFER, position_buffer_);
-    // 버텍스 쉐이더의 attribute 중 a_position 부분 활성화
     glEnableVertexAttribArray(loc_a_position);
-    // 현재 배열 버퍼에 있는 데이터를 버텍스 쉐이더 a_position에 해당하는 attribute와 연결
-    glVertexAttribPointer(loc_a_position, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(loc_a_position, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-    // 앞으로 언급하는 배열 버퍼(GL_ARRAY_BUFFER)는 color_buffer로 지정
+    // Bind the normal buffer
     glBindBuffer(GL_ARRAY_BUFFER, normal_buffer_);
-    // 버텍스 쉐이더의 attribute 중 a_color 부분 활성화
     glEnableVertexAttribArray(loc_a_normal);
-    // 현재 배열 버퍼에 있는 데이터를 버텍스 쉐이더 a_color에 해당하는 attribute와 연결
-    glVertexAttribPointer(loc_a_normal, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(loc_a_normal, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
+    // Draw the triangles
     glDrawArrays(GL_TRIANGLES, 0, tv_indices_.size());
-    
-    // 정점 attribute 배열 비활성화
+
+    // Disable the vertex attribute arrays
     glDisableVertexAttribArray(loc_a_position);
     glDisableVertexAttribArray(loc_a_normal);
 }
